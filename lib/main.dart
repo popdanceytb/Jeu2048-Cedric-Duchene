@@ -11,10 +11,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '2048 Like Game',
+      title: '2048',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFFF5F5DC), // Beige/blanc cassé
+        scaffoldBackgroundColor: const Color(0xFFFDFDEC), // Beige/blanc cassé
       ),
       home: const GamePage(),
     );
@@ -30,12 +30,13 @@ class GamePage extends StatefulWidget {
 
 class _GamePageState extends State<GamePage> {
   List<int> grid = List.filled(16, 0);
+  Set<int> combinedIndices = {};
   int moves = 0;
   int score = 0;
   int bestScore = 0;
-  int goal = 2048; // Objectif par défaut
+  int goal = 2048;
+  bool randomizeGrid = false; // Nouvelle option pour activer/désactiver la grille aléatoire.
   final List<int> goals = [256, 512, 1024, 2048];
-  List<int> mergedTiles = [];
 
   @override
   void initState() {
@@ -46,12 +47,40 @@ class _GamePageState extends State<GamePage> {
   void _startNewGame() {
     setState(() {
       grid = List.filled(16, 0);
-      _addRandomTile();
-      _addRandomTile();
+      if (randomizeGrid) {
+        _fillRandomGrid();
+      } else {
+        _addRandomTile();
+        _addRandomTile();
+      }
       moves = 0;
       score = 0;
-      mergedTiles.clear();
+      combinedIndices.clear();
     });
+  }
+
+  void _fillRandomGrid() {
+    final random = Random();
+    int maxValue = goal ~/ 2; // Limiter les valeurs à la moitié de l'objectif.
+
+    for (int i = 0; i < grid.length; i++) {
+      if (random.nextBool()) {
+        grid[i] = _randomPowerOfTwo(maxValue);
+      } else {
+        grid[i] = 0;
+      }
+    }
+  }
+
+  int _randomPowerOfTwo(int max) {
+    // Générer une puissance de 2 aléatoire inférieure ou égale à `max`.
+    List<int> powers = [];
+    int value = 2;
+    while (value <= max) {
+      powers.add(value);
+      value *= 2;
+    }
+    return powers.isNotEmpty ? powers[Random().nextInt(powers.length)] : 2;
   }
 
   void _addRandomTile() {
@@ -69,7 +98,7 @@ class _GamePageState extends State<GamePage> {
     setState(() {
       List<int> newGrid = List.filled(16, 0);
       int moveScore = 0;
-      mergedTiles.clear();
+      combinedIndices.clear();
 
       for (int i = 0; i < 4; i++) {
         List<int> line;
@@ -88,7 +117,7 @@ class _GamePageState extends State<GamePage> {
           line = line.reversed.toList();
         }
 
-        List<int> mergedLine = _mergeLine(line);
+        List<int> mergedLine = _mergeLine(line, i, direction);
         moveScore += _calculateScore(line, mergedLine);
 
         if (direction == 'down' || direction == 'right') {
@@ -120,7 +149,6 @@ class _GamePageState extends State<GamePage> {
     for (int i = 0; i < 4; i++) {
       if (newLine[i] > oldLine[i]) {
         score += newLine[i];
-        mergedTiles.add(newLine[i]);
       }
     }
     return score;
@@ -188,13 +216,21 @@ class _GamePageState extends State<GamePage> {
     );
   }
 
-  List<int> _mergeLine(List<int> line) {
+  List<int> _mergeLine(List<int> line, int lineIndex, String direction) {
     List<int> merged = line.where((tile) => tile != 0).toList();
 
     for (int i = 0; i < merged.length - 1; i++) {
       if (merged[i] == merged[i + 1]) {
         merged[i] *= 2;
         merged[i + 1] = 0;
+
+        int globalIndex = 0;
+        if (direction == 'up' || direction == 'down') {
+          globalIndex = lineIndex + i * 4;
+        } else {
+          globalIndex = lineIndex * 4 + i;
+        }
+        combinedIndices.add(globalIndex);
       }
     }
 
@@ -211,72 +247,53 @@ class _GamePageState extends State<GamePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('2048'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info),
-            onPressed: () {
-              showAboutDialog(
-                context: context,
-                applicationName: "Jeu 2048",
-                applicationVersion: "1.0.0",
-                applicationLegalese: "Crée par Cedric.",
-              );
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Coups: $moves', style: const TextStyle(fontSize: 20)),
+                Text('Score: $score', style: const TextStyle(fontSize: 20)),
+                DropdownButton<int>(
+                  value: goal,
+                  items: goals
+                      .map(
+                        (g) => DropdownMenuItem(
+                      value: g,
+                      child: Text('$g'),
+                    ),
+                  )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      goal = value!;
+                      _startNewGame();
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('Grille aléatoire'),
+            value: randomizeGrid,
+            onChanged: (bool? value) {
+              setState(() {
+                randomizeGrid = value!;
+                _startNewGame();
+              });
             },
           ),
+          Expanded(
+            child: GameGrid(
+              grid: grid,
+              combinedIndices: combinedIndices,
+            ),
+          ),
         ],
-      ),
-      body: GestureDetector(
-        onVerticalDragEnd: (details) {
-          if (details.primaryVelocity! < 0) {
-            _move('up');
-          } else if (details.primaryVelocity! > 0) {
-            _move('down');
-          }
-        },
-        onHorizontalDragEnd: (details) {
-          if (details.primaryVelocity! < 0) {
-            _move('left');
-          } else if (details.primaryVelocity! > 0) {
-            _move('right');
-          }
-        },
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Moves: $moves', style: const TextStyle(fontSize: 20)),
-                  Text('Score: $score', style: const TextStyle(fontSize: 20)),
-                  DropdownButton<int>(
-                    value: goal,
-                    items: goals
-                        .map(
-                          (g) => DropdownMenuItem(
-                        value: g,
-                        child: Text('$g'),
-                      ),
-                    )
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        goal = value!;
-                        _startNewGame();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: GameGrid(
-                grid: grid,
-                mergedTiles: mergedTiles,
-              ),
-            ),
-          ],
-        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startNewGame,
@@ -288,10 +305,13 @@ class _GamePageState extends State<GamePage> {
 
 class GameGrid extends StatelessWidget {
   final List<int> grid;
-  final List<int> mergedTiles;
+  final Set<int> combinedIndices;
 
-  const GameGrid({Key? key, required this.grid, required this.mergedTiles})
-      : super(key: key);
+  const GameGrid({
+    Key? key,
+    required this.grid,
+    required this.combinedIndices,
+  }) : super(key: key);
 
   Color _getTileColor(int value) {
     if (value == 0) return Colors.grey[300]!;
@@ -329,7 +349,9 @@ class GameGrid extends StatelessWidget {
             return AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, animation) {
-                return ScaleTransition(scale: animation, child: child);
+                return combinedIndices.contains(index)
+                    ? ScaleTransition(scale: animation, child: child)
+                    : child;
               },
               child: Container(
                 key: ValueKey(grid[index]),
